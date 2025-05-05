@@ -10,40 +10,44 @@ const TOGETHER_API_KEY = "f788a4cb56c2084ca59e31702e952ff40d4d761bc8b25cb4a026ed
 
 // Инициализация бота и ИИ
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+
+// Инициализация Together API
 const together = new Together({ apiKey: TOGETHER_API_KEY });
 
-console.log("🧠 Бот-психолог Кристина запущен...");
+// Память пользователей (временная, сбрасывается при перезапуске)
+const conversations = {};
 
-bot.on("message", async (msg) => {
+// Обработка входящих сообщений
+bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const userInput = msg.text;
 
-  console.log("📩 Получено сообщение:", userInput);
+  if (!userInput) return;
 
-  bot.sendChatAction(chatId, "typing");
+  // Инициализация истории для пользователя, если её ещё нет
+  if (!conversations[chatId]) {
+    conversations[chatId] = [];
+  }
+
+  // Добавляем сообщение пользователя в историю
+  conversations[chatId].push({ role: 'user', content: userInput });
 
   try {
+    // Отправляем запрос к Together API
     const response = await together.chat.completions.create({
-      messages: [
-        {
-          role: "system",
-          content:
-            "Ты — профессиональный психолог по имени Кристина. Ты говоришь спокойно, доброжелательно, с пониманием и поддержкой. Помогаешь людям справляться с тревогой, стрессом, апатией, проблемами в отношениях и самооценкой. Отвечай так, будто ты ведешь приватную терапевтическую беседу."
-        },
-        {
-          role: "user",
-          content: userInput
-        }
-      ],
-      model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free"
+      model: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+      messages: conversations[chatId],
     });
 
-    const reply = response.choices[0].message.content;
-    console.log("🤖 Кристина ответила:", reply);
+    const botReply = response.choices[0].message.content.trim();
 
-    bot.sendMessage(chatId, reply);
-  } catch (error) {
-    console.error("❌ Ошибка:", error);
-    bot.sendMessage(chatId, "⚠️ Произошла ошибка. Попробуйте позже.");
+    // Добавляем ответ бота в историю
+    conversations[chatId].push({ role: 'assistant', content: botReply });
+
+    // Отправляем ответ пользователю
+    bot.sendMessage(chatId, botReply);
+  } catch (err) {
+    console.error('Ошибка при обращении к Together:', err);
+    bot.sendMessage(chatId, 'Произошла ошибка. Попробуйте позже.');
   }
 });
